@@ -483,9 +483,27 @@ mlx5_rxq_initialize(struct mlx5_rxq_data *rxq)
 
 			scat = &((volatile struct mlx5_wqe_data_seg *)
 					rxq->wqes)[i];
+
 			addr = rte_pktmbuf_mtod(buf, uintptr_t);
 			byte_count = DATA_LEN(buf);
 			lkey = mlx5_rx_mb2mr(rxq, buf);
+
+			if (unlikely(rxq->dm_lkey != 0 && rxq->sges_n > 0)) {
+				unsigned int sges_per_pkt = 1 << rxq->sges_n;
+				unsigned int sge_idx = i & (sges_per_pkt - 1);
+
+				if (sge_idx == 1) {
+					addr = rxq->dm_offset;
+					lkey = rte_cpu_to_be_32(rxq->dm_lkey);
+					/*
+					 * The DM window is 2048 B per queue; the
+					 * mbuf-derived byte_count is the payload
+					 * pool's full data room and overruns it.
+					 */
+					if (byte_count > 2048)
+						byte_count = 2048;
+				}
+			}
 		}
 		/* scat->addr must be able to store a pointer. */
 		MLX5_ASSERT(sizeof(scat->addr) >= sizeof(uintptr_t));
@@ -1136,10 +1154,23 @@ mlx5_rx_burst(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts_n)
 		 * of the buffers are already known, only the buffer address
 		 * changes.
 		 */
-		wqe->addr = rte_cpu_to_be_64(rte_pktmbuf_mtod(rep, uintptr_t));
-		/* If there's only one MR, no need to replace LKey in WQE. */
-		if (unlikely(mlx5_mr_btree_len(&rxq->mr_ctrl.cache_bh) > 1))
-			wqe->lkey = mlx5_rx_mb2mr(rxq, rep);
+		if (unlikely(rxq->dm_lkey != 0 && rxq->sges_n > 0)) {
+			unsigned int sges_per_pkt = 1 << rxq->sges_n;
+			unsigned int sge_idx = idx & (sges_per_pkt - 1);
+
+			if (sge_idx == 1) {
+				wqe->addr = rte_cpu_to_be_64(rxq->dm_offset);
+				wqe->lkey = rte_cpu_to_be_32(rxq->dm_lkey);
+			} else {
+				wqe->addr = rte_cpu_to_be_64(rte_pktmbuf_mtod(rep, uintptr_t));
+				if (unlikely(mlx5_mr_btree_len(&rxq->mr_ctrl.cache_bh) > 1))
+					wqe->lkey = mlx5_rx_mb2mr(rxq, rep);
+			}
+		} else {
+			wqe->addr = rte_cpu_to_be_64(rte_pktmbuf_mtod(rep, uintptr_t));
+			if (unlikely(mlx5_mr_btree_len(&rxq->mr_ctrl.cache_bh) > 1))
+				wqe->lkey = mlx5_rx_mb2mr(rxq, rep);
+		}
 		if (len > DATA_LEN(seg)) {
 			len -= DATA_LEN(seg);
 			++NB_SEGS(pkt);

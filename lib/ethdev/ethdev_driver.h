@@ -1367,6 +1367,9 @@ enum rte_eth_dev_operation {
 typedef uint64_t (*eth_get_restore_flags_t)(struct rte_eth_dev *dev,
 					    enum rte_eth_dev_operation op);
 
+typedef int (*eth_memcpy_to_dm_t)(struct rte_eth_dev *dev, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
+typedef int (*eth_memcpy_from_dm_t)(struct rte_eth_dev *dev, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
+
 /**
  * @internal A structure containing the functions exported by an Ethernet driver.
  */
@@ -1615,6 +1618,9 @@ struct eth_dev_ops {
 
 	/** Get configuration which ethdev should restore */
 	eth_get_restore_flags_t get_restore_flags;
+
+	eth_memcpy_to_dm_t memcpy_to_dm;
+	eth_memcpy_from_dm_t memcpy_from_dm;
 };
 
 /**

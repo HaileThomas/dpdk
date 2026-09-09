@@ -7171,4 +7171,32 @@ int rte_eth_dev_map_aggr_tx_affinity(uint16_t port_id, uint16_t tx_queue_id,
 	return ret;
 }
 
+int
+rte_eth_memcpy_to_dm(uint16_t port_id, uint16_t queue_id, void *buf, size_t size, uint64_t offset)
+{
+	struct rte_eth_dev *dev;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
+	dev = &rte_eth_devices[port_id];
+
+	if (*dev->dev_ops->memcpy_to_dm == NULL)
+		return -ENOTSUP;
+
+	return dev->dev_ops->memcpy_to_dm(dev, queue_id, buf, size, offset);
+}
+
+int
+rte_eth_memcpy_from_dm(uint16_t port_id, uint16_t queue_id, void *buf, size_t size, uint64_t offset)
+{
+	struct rte_eth_dev *dev;
+
+	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
+	dev = &rte_eth_devices[port_id];
+
+	if (*dev->dev_ops->memcpy_from_dm == NULL)
+		return -ENOTSUP;
+
+	return dev->dev_ops->memcpy_from_dm(dev, queue_id, buf, size, offset);
+}
+
 RTE_LOG_REGISTER_DEFAULT(rte_eth_dev_logtype, INFO);

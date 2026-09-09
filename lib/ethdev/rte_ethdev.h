@@ -7104,6 +7104,12 @@ out:
 	return rc;
 }
 
+__rte_experimental
+int rte_eth_memcpy_to_dm(uint16_t port_id, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
+
+__rte_experimental
+int rte_eth_memcpy_from_dm(uint16_t port_id, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
+
 #ifdef __cplusplus
 }
 #endif

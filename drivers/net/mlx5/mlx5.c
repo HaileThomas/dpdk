@@ -1941,6 +1941,36 @@ mlx5_alloc_shared_dev_ctx(const struct mlx5_dev_spawn_data *spawn,
 	}
 	mlx5_flow_aging_init(sh);
 	mlx5_flow_ipool_create(sh);
+
+	if (sh->cdev->ctx) {
+		struct ibv_device_attr_ex attr_ex = {};
+		
+		if (ibv_query_device_ex(sh->cdev->ctx, NULL, &attr_ex) == 0 && attr_ex.max_dm_size > 0) {
+			
+			size_t dm_size = RTE_ALIGN_FLOOR(attr_ex.max_dm_size, 64);
+			struct ibv_alloc_dm_attr dm_attr = { .length = dm_size };
+			
+			sh->dm = mlx5_glue->alloc_dm(sh->cdev->ctx, &dm_attr);
+			if (sh->dm) {
+				sh->dm_mr = mlx5_glue->reg_dm_mr(
+					sh->cdev->pd, sh->dm, 0, dm_size,
+					IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_ZERO_BASED);
+					
+				if (sh->dm_mr) {
+					sh->dm_size = dm_size;
+					DRV_LOG(INFO, "DM ready: lkey=0x%x, size=%zu bytes", 
+							sh->dm_mr->lkey, dm_size);
+				} else {
+					DRV_LOG(WARNING, "DM MR registration failed (errno=%d)", errno);
+					mlx5_glue->free_dm(sh->dm);
+					sh->dm = NULL;
+				}
+			} else {
+				DRV_LOG(WARNING, "DM alloc failed (errno=%d)", errno);
+			}
+		}
+	}
+	
 	/* Add context to the global device list. */
 	LIST_INSERT_HEAD(&dev_ctx_list, sh, next);
 	rte_spinlock_init(&sh->geneve_tlv_opt_sl);
@@ -1964,6 +1994,8 @@ error:
 	} while (++i <= (uint32_t)sh->bond.n_port);
 	if (sh->td)
 		claim_zero(mlx5_devx_cmd_destroy(sh->td));
+	if (sh->dm)
+		mlx5_glue->free_dm(sh->dm);
 	if (sh->phdev)
 		mlx5_physical_device_destroy(sh->phdev);
 	mlx5_free(sh);
@@ -2113,6 +2145,12 @@ mlx5_free_shared_dev_ctx(struct mlx5_dev_ctx_shared *sh)
 	pthread_mutex_destroy(&sh->txpp.mutex);
 	mlx5_lwm_unset(sh);
 	mlx5_physical_device_destroy(sh->phdev);
+	
+	if (sh->dm) {
+		mlx5_glue->free_dm(sh->dm);
+		sh->dm = NULL;
+	}
+
 	mlx5_free(sh);
 	return;
 exit:
@@ -2633,6 +2671,8 @@ const struct eth_dev_ops mlx5_dev_ops = {
 	.map_aggr_tx_affinity = mlx5_map_aggr_tx_affinity,
 	.rx_metadata_negotiate = mlx5_flow_rx_metadata_negotiate,
 	.get_restore_flags = mlx5_get_restore_flags,
+	.memcpy_to_dm = mlx5_memcpy_to_dm,
+	.memcpy_from_dm = mlx5_memcpy_from_dm,
 };
 
 /* Available operations from secondary process. */

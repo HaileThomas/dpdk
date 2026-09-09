@@ -408,6 +408,12 @@ struct mlx5_glue {
 					(struct ibv_context *context,
 					 struct mlx5dv_steering_anchor_attr *attr);
 	int (*destroy_steering_anchor)(struct mlx5dv_steering_anchor *sa);
+	struct ibv_dm *(*alloc_dm)(struct ibv_context *context,
+                               struct ibv_alloc_dm_attr *attr);
+    int (*free_dm)(struct ibv_dm *dm);
+	struct ibv_mr *(*reg_dm_mr)(struct ibv_pd *pd, struct ibv_dm *dm,
+			    uint64_t dm_offset, size_t length,
+				uint32_t access);
 };
 
 extern const struct mlx5_glue *mlx5_glue;

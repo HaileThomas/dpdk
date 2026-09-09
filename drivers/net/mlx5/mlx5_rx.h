@@ -103,6 +103,8 @@ struct __rte_cache_aligned mlx5_rxq_data {
 	unsigned int shared:1; /* Shared RXQ. */
 	unsigned int delay_drop:1; /* Enable delay drop. */
 	unsigned int cqe_comp_layout:1; /* CQE Compression Layout*/
+ 	uint32_t dm_lkey;      /* The lkey of the registered SRAM */
+ 	uint64_t dm_offset;    /* Base offset for this queue's SRAM buffer */
 	uint16_t port_id;
 	volatile uint32_t *rq_db;
 	volatile uint32_t *cq_db;

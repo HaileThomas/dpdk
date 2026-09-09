@@ -1575,6 +1575,9 @@ struct mlx5_dev_ctx_shared {
 	void *fdb_domain; /* FDB Direct Rules name space handle. */
 	void *rx_domain; /* RX Direct Rules name space handle. */
 	void *tx_domain; /* TX Direct Rules name space handle. */
+	struct ibv_dm *dm;
+	struct ibv_mr *dm_mr;
+	size_t dm_size;
 #ifndef RTE_ARCH_64
 	rte_spinlock_t uar_lock_cq; /* CQs share a common distinct UAR. */
 	rte_spinlock_t uar_lock[MLX5_UAR_PAGE_NUM_MAX];
@@ -2738,5 +2741,8 @@ mlx5_flow_hw_put_dr_action(struct rte_eth_dev *dev,
 bool
 mlx5_hw_ctx_validate(const struct rte_eth_dev *dev,
 		     struct rte_flow_error *error);
+
+int mlx5_memcpy_to_dm(struct rte_eth_dev *dev, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
+int mlx5_memcpy_from_dm(struct rte_eth_dev *dev, uint16_t queue_id, void *buf, size_t size, uint64_t offset);
 
 #endif /* RTE_PMD_MLX5_H_ */

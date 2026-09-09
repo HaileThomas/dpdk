@@ -905,3 +905,21 @@ mlx5_get_mtu_bounds(struct rte_eth_dev *dev, uint16_t *min_mtu, uint16_t *max_mt
 	DRV_LOG(INFO, "port %u minimum MTU is %u", dev->data->port_id, *min_mtu);
 	DRV_LOG(INFO, "port %u maximum MTU is %u", dev->data->port_id, *max_mtu);
 }
+
+int
+mlx5_memcpy_to_dm(struct rte_eth_dev *dev, uint16_t queue_id __rte_unused, void *buf, size_t size, uint64_t offset)
+{
+	struct mlx5_priv *priv = dev->data->dev_private;
+	struct mlx5_dev_ctx_shared *sh = priv->sh;
+	
+	return ibv_memcpy_to_dm(sh->dm, offset, buf, size);
+}
+
+int
+mlx5_memcpy_from_dm(struct rte_eth_dev *dev, uint16_t queue_id __rte_unused, void *buf, size_t size, uint64_t offset)
+{
+	struct mlx5_priv *priv = dev->data->dev_private;
+	struct mlx5_dev_ctx_shared *sh = priv->sh;
+	
+	return ibv_memcpy_from_dm(buf, sh->dm, offset, size);
+}

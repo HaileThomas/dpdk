@@ -1578,6 +1578,26 @@ mlx5_glue_dv_destroy_steering_anchor(struct mlx5dv_steering_anchor *sa)
 #endif
 }
 
+static struct ibv_dm *
+mlx5_glue_alloc_dm(struct ibv_context *context, struct ibv_alloc_dm_attr *attr)
+{
+    return ibv_alloc_dm(context, attr);
+}
+
+static int
+mlx5_glue_free_dm(struct ibv_dm *dm)
+{
+    return ibv_free_dm(dm);
+}
+
+static struct ibv_mr *
+mlx5_glue_reg_dm_mr(struct ibv_pd *pd, struct ibv_dm *dm,
+		    uint64_t dm_offset, size_t length, uint32_t access)
+{
+	return ibv_reg_dm_mr(pd, dm, dm_offset, length, access);
+}
+
+
 alignas(RTE_CACHE_LINE_SIZE)
 const struct mlx5_glue *mlx5_glue = &(const struct mlx5_glue) {
 	.version = MLX5_GLUE_VERSION,
@@ -1717,4 +1737,7 @@ const struct mlx5_glue *mlx5_glue = &(const struct mlx5_glue) {
 		mlx5_glue_dr_create_flow_action_send_to_kernel,
 	.create_steering_anchor = mlx5_glue_dv_create_steering_anchor,
 	.destroy_steering_anchor = mlx5_glue_dv_destroy_steering_anchor,
+	.alloc_dm = mlx5_glue_alloc_dm,
+    .free_dm = mlx5_glue_free_dm,
+	.reg_dm_mr = mlx5_glue_reg_dm_mr,
 };

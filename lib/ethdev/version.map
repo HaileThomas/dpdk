@@ -337,6 +337,9 @@ EXPERIMENTAL {
 	rte_eth_timesync_adjust_freq;
 	rte_flow_async_create_by_index_with_pattern;
 	rte_tm_node_query;
+
+	rte_eth_memcpy_to_dm;
+	rte_eth_memcpy_from_dm;
 };
 
 INTERNAL {
