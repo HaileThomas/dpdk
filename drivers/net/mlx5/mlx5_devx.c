@@ -452,8 +452,16 @@ mlx5_rxq_create_devx_cq_resources(struct mlx5_rxq_priv *rxq)
 		/*
 		 * For vectorized Rx, it must not be doubled in order to
 		 * make cq_ci and rq_ci aligned.
+		 *
+		 * The burst function is selected per device, not per queue:
+		 * if any queue on the port cannot use the vectorized path
+		 * (a multi-segment buffer-split queue, for instance), every
+		 * queue runs the scalar burst.  Size the CQ for the burst
+		 * that will actually run - keying off this queue alone
+		 * leaves a single-segment queue with a CQ sized for the
+		 * vector path, which the scalar path then overruns.
 		 */
-		if (mlx5_rxq_check_vec_support(rxq_data) < 0)
+		if (mlx5_check_vec_rx_support(ETH_DEV(priv)) < 0)
 			cqe_n *= 2;
 	} else if (priv->config.cqe_comp && rxq_data->hw_timestamp) {
 		DRV_LOG(DEBUG,
