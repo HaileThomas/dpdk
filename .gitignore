@@ -51,3 +51,9 @@ build-*
 # ignore other build directory patterns
 *-gcc*
 *-clang*
+
+# meson install output (prefix is the repo root, see build/meson-info)
+/bin/
+/include/
+/share/
+/lib/x86_64-linux-gnu/
