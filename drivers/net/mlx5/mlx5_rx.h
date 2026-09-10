@@ -35,6 +35,8 @@ struct mlx5_rxq_stats {
 #ifdef MLX5_PMD_SOFT_COUNTERS
 	uint64_t ipackets; /**< Total of successfully received packets. */
 	uint64_t ibytes; /**< Total of successfully received bytes. */
+	uint64_t split_packets; /**< Total of packets received in >1 segment. */
+	uint64_t trimmed_bytes; /**< Bytes received in segments after the head. */
 #endif
 	uint64_t idropped; /**< Total of packets dropped when RX ring full. */
 	uint64_t rx_nombuf; /**< Total of RX mbuf allocation failures. */

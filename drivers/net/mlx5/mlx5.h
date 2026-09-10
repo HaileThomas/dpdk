@@ -315,6 +315,8 @@ struct mlx5_stats_ctrl {
 	/* Base for imissed counter. */
 	uint64_t imissed_base;
 	uint64_t imissed;
+	/* Base for the software Rx buffer-split counters. */
+	uint64_t rx_split_base[2];
 };
 
 /* Maximal size of coalesced segment for LRO is set in chunks of 256 Bytes. */

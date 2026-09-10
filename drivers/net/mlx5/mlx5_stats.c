@@ -20,6 +20,150 @@
 #include "mlx5_tx.h"
 #include "mlx5_malloc.h"
 
+/*
+ * Software counters describing Rx buffer split, appended to the device xstats
+ * the same way the txpp ones are.  "Trimmed" bytes are those the NIC placed in
+ * a segment after the head: payload the stack may never read, and which never
+ * reaches host memory when the payload segment lives in device memory.
+ */
+static const char * const mlx5_rx_split_stat_names[] = {
+	"rx_split_packets",
+	"rx_split_trimmed_bytes",
+};
+
+#define MLX5_RX_SPLIT_XSTATS_N RTE_DIM(mlx5_rx_split_stat_names)
+
+#ifdef MLX5_PMD_SOFT_COUNTERS
+
+/**
+ * Sum the per-queue Rx buffer-split counters of a port.
+ *
+ * @param dev
+ *   Pointer to Ethernet device.
+ * @param[out] values
+ *   Array of MLX5_RX_SPLIT_XSTATS_N values to fill.
+ */
+static void
+mlx5_rx_split_xstats_sum(struct rte_eth_dev *dev, uint64_t values[])
+{
+	struct mlx5_priv *priv = dev->data->dev_private;
+	unsigned int i;
+
+	values[0] = 0;
+	values[1] = 0;
+	for (i = 0; i != priv->rxqs_n; ++i) {
+		struct mlx5_rxq_data *rxq = mlx5_rxq_data_get(dev, i);
+
+		if (rxq == NULL)
+			continue;
+		values[0] += rxq->stats.split_packets;
+		values[1] += rxq->stats.trimmed_bytes;
+	}
+}
+
+/**
+ * Append the Rx buffer-split counters to the extended statistics.
+ *
+ * @param dev
+ *   Pointer to Ethernet device.
+ * @param[out] stats
+ *   Pointer to rte extended stats table.
+ * @param n
+ *   The size of the stats table.
+ * @param n_used
+ *   Number of entries already filled in.
+ *
+ * @return
+ *   Number of extended stats after the append.
+ */
+static unsigned int
+mlx5_rx_split_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *stats,
+			 unsigned int n, unsigned int n_used)
+{
+	struct mlx5_priv *priv = dev->data->dev_private;
+	struct mlx5_stats_ctrl *stats_ctrl = &priv->stats_ctrl;
+	unsigned int i;
+
+	if (n >= n_used + MLX5_RX_SPLIT_XSTATS_N && stats) {
+		uint64_t values[MLX5_RX_SPLIT_XSTATS_N];
+
+		mlx5_rx_split_xstats_sum(dev, values);
+		for (i = 0; i != MLX5_RX_SPLIT_XSTATS_N; ++i) {
+			stats[n_used + i].id = n_used + i;
+			stats[n_used + i].value = values[i] -
+					stats_ctrl->rx_split_base[i];
+		}
+	}
+	return n_used + MLX5_RX_SPLIT_XSTATS_N;
+}
+
+/**
+ * Reset the Rx buffer-split counters by taking a new base.
+ *
+ * @param dev
+ *   Pointer to Ethernet device.
+ */
+static void
+mlx5_rx_split_xstats_reset(struct rte_eth_dev *dev)
+{
+	struct mlx5_priv *priv = dev->data->dev_private;
+
+	mlx5_rx_split_xstats_sum(dev, priv->stats_ctrl.rx_split_base);
+}
+
+#else /* MLX5_PMD_SOFT_COUNTERS */
+
+static unsigned int
+mlx5_rx_split_xstats_get(struct rte_eth_dev *dev __rte_unused,
+			 struct rte_eth_xstat *stats,
+			 unsigned int n, unsigned int n_used)
+{
+	unsigned int i;
+
+	if (n >= n_used + MLX5_RX_SPLIT_XSTATS_N && stats) {
+		for (i = 0; i != MLX5_RX_SPLIT_XSTATS_N; ++i) {
+			stats[n_used + i].id = n_used + i;
+			stats[n_used + i].value = 0;
+		}
+	}
+	return n_used + MLX5_RX_SPLIT_XSTATS_N;
+}
+
+static void
+mlx5_rx_split_xstats_reset(struct rte_eth_dev *dev __rte_unused)
+{
+}
+
+#endif /* MLX5_PMD_SOFT_COUNTERS */
+
+/**
+ * Append the names of the Rx buffer-split counters.
+ *
+ * @param[out] xstats_names
+ *   Buffer to insert names into.
+ * @param n
+ *   Number of names.
+ * @param n_used
+ *   Number of names already filled in.
+ *
+ * @return
+ *   Number of xstats names after the append.
+ */
+static unsigned int
+mlx5_rx_split_xstats_get_names(struct rte_eth_xstat_name *xstats_names,
+			       unsigned int n, unsigned int n_used)
+{
+	unsigned int i;
+
+	if (n >= n_used + MLX5_RX_SPLIT_XSTATS_N && xstats_names) {
+		for (i = 0; i != MLX5_RX_SPLIT_XSTATS_N; ++i)
+			strlcpy(xstats_names[n_used + i].name,
+				mlx5_rx_split_stat_names[i],
+				RTE_ETH_XSTATS_NAME_SIZE);
+	}
+	return n_used + MLX5_RX_SPLIT_XSTATS_N;
+}
+
 /**
  * DPDK callback to get extended device statistics.
  *
@@ -90,6 +234,7 @@ mlx5_xstats_get(struct rte_eth_dev *dev, struct rte_eth_xstat *stats,
 		}
 	}
 	mlx5_stats_n = mlx5_txpp_xstats_get(dev, stats, n, mlx5_stats_n);
+	mlx5_stats_n = mlx5_rx_split_xstats_get(dev, stats, n, mlx5_stats_n);
 	return mlx5_stats_n;
 }
 
@@ -274,6 +419,7 @@ mlx5_xstats_reset(struct rte_eth_dev *dev)
 		xstats_ctrl->hw_stats[i] = 0;
 	}
 	mlx5_txpp_xstats_reset(dev);
+	mlx5_rx_split_xstats_reset(dev);
 	mlx5_free(counters);
 	return 0;
 }
@@ -309,5 +455,7 @@ mlx5_xstats_get_names(struct rte_eth_dev *dev,
 	}
 	mlx5_xstats_n = mlx5_txpp_xstats_get_names(dev, xstats_names,
 						   n, mlx5_xstats_n);
+	mlx5_xstats_n = mlx5_rx_split_xstats_get_names(xstats_names, n,
+						       mlx5_xstats_n);
 	return mlx5_xstats_n;
 }

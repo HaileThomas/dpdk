@@ -1181,6 +1181,19 @@ mlx5_rx_burst(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts_n)
 #ifdef MLX5_PMD_SOFT_COUNTERS
 		/* Increment bytes counter. */
 		rxq->stats.ibytes += PKT_LEN(pkt);
+		/*
+		 * With buffer split the head segment holds L2-L4 and every
+		 * later segment holds payload the application may never read -
+		 * and which does not cross PCIe at all when the payload segment
+		 * is redirected to device memory.  Count those bytes on the
+		 * side: ibytes stays the on-wire total (the CQE length), and
+		 * ibytes - trimmed_bytes is what landed in host memory.
+		 */
+		if (NB_SEGS(pkt) > 1) {
+			rxq->stats.split_packets++;
+			rxq->stats.trimmed_bytes += PKT_LEN(pkt) -
+						    DATA_LEN(pkt);
+		}
 #endif
 		/* Return packet. */
 		*(pkts++) = pkt;
@@ -1362,6 +1375,19 @@ mlx5_rx_burst_out_of_order(void *dpdk_rxq, struct rte_mbuf **pkts, uint16_t pkts
 #ifdef MLX5_PMD_SOFT_COUNTERS
 		/* Increment bytes counter. */
 		rxq->stats.ibytes += PKT_LEN(pkt);
+		/*
+		 * With buffer split the head segment holds L2-L4 and every
+		 * later segment holds payload the application may never read -
+		 * and which does not cross PCIe at all when the payload segment
+		 * is redirected to device memory.  Count those bytes on the
+		 * side: ibytes stays the on-wire total (the CQE length), and
+		 * ibytes - trimmed_bytes is what landed in host memory.
+		 */
+		if (NB_SEGS(pkt) > 1) {
+			rxq->stats.split_packets++;
+			rxq->stats.trimmed_bytes += PKT_LEN(pkt) -
+						    DATA_LEN(pkt);
+		}
 #endif
 		/* Return packet. */
 		*(pkts++) = pkt;
