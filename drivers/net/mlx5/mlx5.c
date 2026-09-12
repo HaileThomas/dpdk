@@ -2201,8 +2201,14 @@ mlx5_free_shared_dev_ctx(struct mlx5_dev_ctx_shared *sh)
 	MLX5_ASSERT(sh->geneve_tlv_option_resource == NULL);
 	pthread_mutex_destroy(&sh->txpp.mutex);
 	mlx5_lwm_unset(sh);
-	mlx5_physical_device_destroy(sh->phdev);
+	/*
+	 * Before mlx5_physical_device_destroy(): the pool and its MR belong to
+	 * cdev->ctx, which that call does not touch - it closes an imported
+	 * context of its own - but releasing device resources while every
+	 * context they were created on is still open does not rely on that.
+	 */
 	mlx5_dm_release(sh);
+	mlx5_physical_device_destroy(sh->phdev);
 	mlx5_free(sh);
 	return;
 exit:
