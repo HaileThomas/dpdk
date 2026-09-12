@@ -914,8 +914,13 @@ mlx5_os_get_physical_device_ctx(struct mlx5_common_device *cdev)
 	 * If the import function succeeds, the new device context takes ownership of
 	 * this FD, which will be freed when the new device is closed.
 	 * If the import function fails, we are responsible for closing this FD.
+	 *
+	 * F_DUPFD_CLOEXEC, not dup(): dup() clears FD_CLOEXEC on the new
+	 * descriptor, so the duplicate would outlive an exec() and keep the
+	 * uverbs context - and everything allocated on it, device memory
+	 * included - alive in any child the application spawns.
 	 */
-	new_cmd_fd = dup(cmd_fd);
+	new_cmd_fd = fcntl(cmd_fd, F_DUPFD_CLOEXEC, 0);
 	if (new_cmd_fd < 0) {
 		DRV_LOG(ERR,
 			"Failed to duplicate FD %d for IB device \"%s\": %s",
