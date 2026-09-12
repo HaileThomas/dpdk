@@ -2015,14 +2015,16 @@ mlx5_alloc_shared_dev_ctx(const struct mlx5_dev_spawn_data *spawn,
 				} else {
 					DRV_LOG(WARNING,
 						"DM MR registration failed"
-						" (errno=%d)", errno);
+						" (errno=%d); Rx payload split"
+						" falls back to host memory",
+						errno);
 					mlx5_dm_release(sh);
 				}
 			} else {
 				DRV_LOG(WARNING,
-					"DM alloc failed (errno=%d); Rx payload"
-					" split into device memory is disabled",
-					errno);
+					"device memory unavailable (errno=%d);"
+					" Rx payload split falls back to host"
+					" memory", errno);
 			}
 		}
 	}
