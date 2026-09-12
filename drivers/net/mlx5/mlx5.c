@@ -1819,6 +1819,31 @@ mlx5_physical_device_destroy(struct mlx5_physical_device *phdev)
 }
 
 /**
+ * Release the device memory pool of a shared device context.
+ *
+ * The MR has to go before the pool: ibv_free_dm() fails with EBUSY while an MR
+ * is still registered on it, and the on-chip memory then stays occupied for the
+ * lifetime of the IB context, so the next shared context on this device gets
+ * nothing.
+ *
+ * @param[in] sh
+ *   Pointer to the shared device context.
+ */
+static void
+mlx5_dm_release(struct mlx5_dev_ctx_shared *sh)
+{
+	if (sh->dm_mr != NULL) {
+		claim_zero(mlx5_glue->dereg_mr(sh->dm_mr));
+		sh->dm_mr = NULL;
+	}
+	if (sh->dm != NULL) {
+		claim_zero(mlx5_glue->free_dm(sh->dm));
+		sh->dm = NULL;
+	}
+	sh->dm_size = 0;
+}
+
+/**
  * Allocate shared device context. If there is multiport device the
  * master and representors will share this context, if there is single
  * port dedicated device, the context will be used by only given
@@ -1944,33 +1969,64 @@ mlx5_alloc_shared_dev_ctx(const struct mlx5_dev_spawn_data *spawn,
 
 	if (sh->cdev->ctx) {
 		struct ibv_device_attr_ex attr_ex = {};
-		
-		if (ibv_query_device_ex(sh->cdev->ctx, NULL, &attr_ex) == 0 && attr_ex.max_dm_size > 0) {
-			
-			size_t dm_size = RTE_ALIGN_FLOOR(attr_ex.max_dm_size, 64);
-			struct ibv_alloc_dm_attr dm_attr = { .length = dm_size };
-			
-			sh->dm = mlx5_glue->alloc_dm(sh->cdev->ctx, &dm_attr);
-			if (sh->dm) {
-				sh->dm_mr = mlx5_glue->reg_dm_mr(
-					sh->cdev->pd, sh->dm, 0, dm_size,
-					IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_ZERO_BASED);
-					
-				if (sh->dm_mr) {
+		size_t dm_size;
+
+		if (ibv_query_device_ex(sh->cdev->ctx, NULL, &attr_ex) == 0 &&
+		    attr_ex.max_dm_size >= MLX5_DM_RXQ_WINDOW) {
+			/*
+			 * On-chip memory is one pool per IB device, and
+			 * max_dm_size is all of it.  Asking for the whole pool
+			 * succeeds only for the first shared context on the
+			 * device and leaves the next one with nothing, so halve
+			 * the request until the device can satisfy it instead
+			 * of giving up on the first ENOMEM.  A smaller MR only
+			 * means fewer Rx queues get a DM window; mlx5_rxq_new()
+			 * bounds-checks each one against sh->dm_size.
+			 */
+			for (dm_size = RTE_ALIGN_FLOOR(attr_ex.max_dm_size,
+						       MLX5_DM_RXQ_WINDOW);
+			     dm_size >= MLX5_DM_RXQ_WINDOW;
+			     dm_size = RTE_ALIGN_FLOOR(dm_size / 2,
+						       MLX5_DM_RXQ_WINDOW)) {
+				struct ibv_alloc_dm_attr dm_attr = {
+					.length = dm_size,
+				};
+
+				sh->dm = mlx5_glue->alloc_dm(sh->cdev->ctx,
+							     &dm_attr);
+				if (sh->dm != NULL)
+					break;
+				DRV_LOG(DEBUG,
+					"DM alloc of %zu bytes failed (errno=%d),"
+					" retrying with half", dm_size, errno);
+			}
+			if (sh->dm != NULL) {
+				sh->dm_mr = mlx5_glue->reg_dm_mr(sh->cdev->pd,
+					sh->dm, 0, dm_size,
+					IBV_ACCESS_LOCAL_WRITE |
+					IBV_ACCESS_ZERO_BASED);
+				if (sh->dm_mr != NULL) {
 					sh->dm_size = dm_size;
-					DRV_LOG(INFO, "DM ready: lkey=0x%x, size=%zu bytes", 
-							sh->dm_mr->lkey, dm_size);
+					DRV_LOG(INFO,
+						"DM ready: lkey=0x%x, size=%zu"
+						" bytes (%zu Rx queue windows)",
+						sh->dm_mr->lkey, dm_size,
+						dm_size / MLX5_DM_RXQ_WINDOW);
 				} else {
-					DRV_LOG(WARNING, "DM MR registration failed (errno=%d)", errno);
-					mlx5_glue->free_dm(sh->dm);
-					sh->dm = NULL;
+					DRV_LOG(WARNING,
+						"DM MR registration failed"
+						" (errno=%d)", errno);
+					mlx5_dm_release(sh);
 				}
 			} else {
-				DRV_LOG(WARNING, "DM alloc failed (errno=%d)", errno);
+				DRV_LOG(WARNING,
+					"DM alloc failed (errno=%d); Rx payload"
+					" split into device memory is disabled",
+					errno);
 			}
 		}
 	}
-	
+
 	/* Add context to the global device list. */
 	LIST_INSERT_HEAD(&dev_ctx_list, sh, next);
 	rte_spinlock_init(&sh->geneve_tlv_opt_sl);
@@ -1994,8 +2050,7 @@ error:
 	} while (++i <= (uint32_t)sh->bond.n_port);
 	if (sh->td)
 		claim_zero(mlx5_devx_cmd_destroy(sh->td));
-	if (sh->dm)
-		mlx5_glue->free_dm(sh->dm);
+	mlx5_dm_release(sh);
 	if (sh->phdev)
 		mlx5_physical_device_destroy(sh->phdev);
 	mlx5_free(sh);
@@ -2145,12 +2200,7 @@ mlx5_free_shared_dev_ctx(struct mlx5_dev_ctx_shared *sh)
 	pthread_mutex_destroy(&sh->txpp.mutex);
 	mlx5_lwm_unset(sh);
 	mlx5_physical_device_destroy(sh->phdev);
-	
-	if (sh->dm) {
-		mlx5_glue->free_dm(sh->dm);
-		sh->dm = NULL;
-	}
-
+	mlx5_dm_release(sh);
 	mlx5_free(sh);
 	return;
 exit:

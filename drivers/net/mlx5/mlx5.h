@@ -47,6 +47,9 @@
 
 #define MLX5_HW_INV_QUEUE UINT32_MAX
 
+/* Per-Rx-queue window inside the device memory MR, in bytes. */
+#define MLX5_DM_RXQ_WINDOW 2048
+
 /*
  * The default ipool threshold value indicates which per_core_cache
  * value to set.
@@ -1577,9 +1580,9 @@ struct mlx5_dev_ctx_shared {
 	void *fdb_domain; /* FDB Direct Rules name space handle. */
 	void *rx_domain; /* RX Direct Rules name space handle. */
 	void *tx_domain; /* TX Direct Rules name space handle. */
-	struct ibv_dm *dm;
-	struct ibv_mr *dm_mr;
-	size_t dm_size;
+	struct ibv_dm *dm; /* Device (on-chip) memory pool, Rx payload split. */
+	struct ibv_mr *dm_mr; /* Zero-based MR covering the whole of @dm. */
+	size_t dm_size; /* Size of @dm_mr, a multiple of MLX5_DM_RXQ_WINDOW. */
 #ifndef RTE_ARCH_64
 	rte_spinlock_t uar_lock_cq; /* CQs share a common distinct UAR. */
 	rte_spinlock_t uar_lock[MLX5_UAR_PAGE_NUM_MAX];

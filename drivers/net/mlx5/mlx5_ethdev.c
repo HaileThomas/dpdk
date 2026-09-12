@@ -906,12 +906,32 @@ mlx5_get_mtu_bounds(struct rte_eth_dev *dev, uint16_t *min_mtu, uint16_t *max_mt
 	DRV_LOG(INFO, "port %u maximum MTU is %u", dev->data->port_id, *max_mtu);
 }
 
+/**
+ * Whether [offset, offset + size) lies inside the device memory pool.
+ *
+ * The pool is absent whenever ibv_alloc_dm() failed at probe time, which is a
+ * warning and not a probe failure, so both accessors have to cope with it.
+ */
+static int
+mlx5_dm_range_check(const struct mlx5_dev_ctx_shared *sh, size_t size,
+		    uint64_t offset)
+{
+	if (sh->dm == NULL)
+		return -ENODEV;
+	if (offset > sh->dm_size || size > sh->dm_size - offset)
+		return -EINVAL;
+	return 0;
+}
+
 int
 mlx5_memcpy_to_dm(struct rte_eth_dev *dev, uint16_t queue_id __rte_unused, void *buf, size_t size, uint64_t offset)
 {
 	struct mlx5_priv *priv = dev->data->dev_private;
 	struct mlx5_dev_ctx_shared *sh = priv->sh;
-	
+	int ret = mlx5_dm_range_check(sh, size, offset);
+
+	if (ret != 0)
+		return ret;
 	return ibv_memcpy_to_dm(sh->dm, offset, buf, size);
 }
 
@@ -920,6 +940,9 @@ mlx5_memcpy_from_dm(struct rte_eth_dev *dev, uint16_t queue_id __rte_unused, voi
 {
 	struct mlx5_priv *priv = dev->data->dev_private;
 	struct mlx5_dev_ctx_shared *sh = priv->sh;
-	
+	int ret = mlx5_dm_range_check(sh, size, offset);
+
+	if (ret != 0)
+		return ret;
 	return ibv_memcpy_from_dm(buf, sh->dm, offset, size);
 }

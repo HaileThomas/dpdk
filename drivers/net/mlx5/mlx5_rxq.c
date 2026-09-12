@@ -1016,16 +1016,16 @@ mlx5_rx_queue_setup(struct rte_eth_dev *dev, uint16_t idx, uint16_t desc,
 	dev->data->rx_queues[idx] = &rxq_ctrl->rxq;
 
 	if (priv->sh->dm_mr) {
-		uint64_t off = (uint64_t)idx * 2048;
+		uint64_t off = (uint64_t)idx * MLX5_DM_RXQ_WINDOW;
 
-		if (off + 2048 > priv->sh->dm_size) {
+		if (off + MLX5_DM_RXQ_WINDOW > priv->sh->dm_size) {
 			DRV_LOG(ERR,
 				"port %u Rx queue %u: DM window [%llu,%llu) does not"
 				" fit in DM MR of %zu bytes; DM redirect disabled"
 				" for this queue",
 				dev->data->port_id, idx,
 				(unsigned long long)off,
-				(unsigned long long)(off + 2048),
+				(unsigned long long)(off + MLX5_DM_RXQ_WINDOW),
 				priv->sh->dm_size);
 		} else {
 			rxq_ctrl->rxq.dm_lkey = priv->sh->dm_mr->lkey;
