@@ -496,8 +496,8 @@ mlx5_rxq_initialize(struct mlx5_rxq_data *rxq)
 					addr = rxq->dm_offset;
 					lkey = rte_cpu_to_be_32(rxq->dm_lkey);
 					/*
-					 * The DM window is one
-					 * MLX5_DM_RXQ_WINDOW per queue; the
+					 * The window is MLX5_DM_RXQ_WINDOW
+					 * bytes and every queue shares it; the
 					 * mbuf-derived byte_count is the payload
 					 * pool's full data room and overruns it.
 					 */

@@ -1015,22 +1015,16 @@ mlx5_rx_queue_setup(struct rte_eth_dev *dev, uint16_t idx, uint16_t desc,
 		dev->data->port_id, idx);
 	dev->data->rx_queues[idx] = &rxq_ctrl->rxq;
 
-	if (priv->sh->dm_mr) {
-		uint64_t off = (uint64_t)idx * MLX5_DM_RXQ_WINDOW;
-
-		if (off + MLX5_DM_RXQ_WINDOW > priv->sh->dm_size) {
-			DRV_LOG(ERR,
-				"port %u Rx queue %u: DM window [%llu,%llu) does not"
-				" fit in DM MR of %zu bytes; DM redirect disabled"
-				" for this queue",
-				dev->data->port_id, idx,
-				(unsigned long long)off,
-				(unsigned long long)(off + MLX5_DM_RXQ_WINDOW),
-				priv->sh->dm_size);
-		} else {
-			rxq_ctrl->rxq.dm_lkey = priv->sh->dm_mr->lkey;
-			rxq_ctrl->rxq.dm_offset = off;
-		}
+	/*
+	 * Point the queue's payload segment at the shared window.  Only a queue
+	 * with more than one segment has a payload segment to redirect; a
+	 * single-segment queue would carry an lkey the Rx path never reaches.
+	 * There is one window for the whole device, so the offset is always its
+	 * base - see mlx5_alloc_shared_dev_ctx() for why the queues may share.
+	 */
+	if (priv->sh->dm_mr != NULL && rxq_ctrl->rxq.sges_n > 0) {
+		rxq_ctrl->rxq.dm_lkey = priv->sh->dm_mr->lkey;
+		rxq_ctrl->rxq.dm_offset = 0;
 	}
 
 	return 0;

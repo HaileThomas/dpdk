@@ -1969,49 +1969,42 @@ mlx5_alloc_shared_dev_ctx(const struct mlx5_dev_spawn_data *spawn,
 
 	if (sh->cdev->ctx) {
 		struct ibv_device_attr_ex attr_ex = {};
-		size_t dm_size;
 
 		if (ibv_query_device_ex(sh->cdev->ctx, NULL, &attr_ex) == 0 &&
 		    attr_ex.max_dm_size >= MLX5_DM_RXQ_WINDOW) {
 			/*
-			 * On-chip memory is one pool per IB device, and
-			 * max_dm_size is all of it.  Asking for the whole pool
-			 * succeeds only for the first shared context on the
-			 * device and leaves the next one with nothing, so halve
-			 * the request until the device can satisfy it instead
-			 * of giving up on the first ENOMEM.  A smaller MR only
-			 * means fewer Rx queues get a DM window; mlx5_rxq_new()
-			 * bounds-checks each one against sh->dm_size.
+			 * One window for the whole device.  Nothing ever reads
+			 * back what the NIC puts there - it is written to keep
+			 * the payload off the PCIe bus, not to be retrieved -
+			 * so every Rx queue can point at the same address.  The
+			 * descriptors of a single queue already do exactly
+			 * that: rxq->dm_offset is one constant per queue, so a
+			 * queue at line rate overwrites its window once per
+			 * packet.  Sharing between queues is that same property
+			 * one level up.
+			 *
+			 * On-chip memory is one pool per IB device and
+			 * max_dm_size is all of it, so anything reserved here
+			 * is denied to every other user of the device for as
+			 * long as the context lives.  Take a single window.
 			 */
-			for (dm_size = RTE_ALIGN_FLOOR(attr_ex.max_dm_size,
-						       MLX5_DM_RXQ_WINDOW);
-			     dm_size >= MLX5_DM_RXQ_WINDOW;
-			     dm_size = RTE_ALIGN_FLOOR(dm_size / 2,
-						       MLX5_DM_RXQ_WINDOW)) {
-				struct ibv_alloc_dm_attr dm_attr = {
-					.length = dm_size,
-				};
+			struct ibv_alloc_dm_attr dm_attr = {
+				.length = MLX5_DM_RXQ_WINDOW,
+			};
 
-				sh->dm = mlx5_glue->alloc_dm(sh->cdev->ctx,
-							     &dm_attr);
-				if (sh->dm != NULL)
-					break;
-				DRV_LOG(DEBUG,
-					"DM alloc of %zu bytes failed (errno=%d),"
-					" retrying with half", dm_size, errno);
-			}
+			sh->dm = mlx5_glue->alloc_dm(sh->cdev->ctx, &dm_attr);
 			if (sh->dm != NULL) {
 				sh->dm_mr = mlx5_glue->reg_dm_mr(sh->cdev->pd,
-					sh->dm, 0, dm_size,
+					sh->dm, 0, MLX5_DM_RXQ_WINDOW,
 					IBV_ACCESS_LOCAL_WRITE |
 					IBV_ACCESS_ZERO_BASED);
 				if (sh->dm_mr != NULL) {
-					sh->dm_size = dm_size;
+					sh->dm_size = MLX5_DM_RXQ_WINDOW;
 					DRV_LOG(INFO,
-						"DM ready: lkey=0x%x, size=%zu"
-						" bytes (%zu Rx queue windows)",
-						sh->dm_mr->lkey, dm_size,
-						dm_size / MLX5_DM_RXQ_WINDOW);
+						"DM ready: lkey=0x%x, one %u B"
+						" window shared by every Rx"
+						" queue", sh->dm_mr->lkey,
+						MLX5_DM_RXQ_WINDOW);
 				} else {
 					DRV_LOG(WARNING,
 						"DM MR registration failed"
